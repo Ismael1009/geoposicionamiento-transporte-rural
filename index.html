@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rastreo de Combis - Múltiples Recorridos y Horarios</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        /* Estilos generales para el cuerpo de la página */
+        body {
+            font-family: 'Inter', sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            background-color: #f8f9fa;
+            color: #343a40;
+            overflow: hidden; /* Evita barras de desplazamiento no deseadas en el body */
+        }
+
+        /* Estilos para el encabezado */
+        .header {
+            background-color: #28a745;
+            color: white;
+            padding: 18px 25px;
+            text-align: center;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+            border-bottom-left-radius: 12px;
+            border-bottom-right-radius: 12px;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            z-index: 10;
+        }
+
+        .header h1 {
+            margin: 0;
+            font-size: 1.8em;
+        }
+
+        .header p {
+            margin: 5px 0 0;
+            font-size: 0.9em;
+            opacity: 0.9;
+        }
+
+        /* Contenedor principal para el mapa y el panel lateral */
+        .main-content {
+            flex-grow: 1;
+            display: flex; /* Mantiene el mapa y el panel lado a lado */
+            flex-direction: row; /* Coloca los elementos en fila */
+            padding: 20px;
+            gap: 20px;
+            position: relative;
+        }
+
+        /* Estilos para el mapa */
+        #map {
+            flex-grow: 1; /* Permite que el mapa ocupe el espacio disponible */
+            min-height: 350px;
+            border-radius: 12px;
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.1);
+            background-color: #e9ecef;
+            z-index: 1;
+        }
+
+        /* Contenedor para el panel lateral derecho (información de combis) */
+        .sidebar-right {
+            display: flex;
+            flex-direction: column; /* Apila la lista de combis */
+            gap: 15px;
+            width: 300px; /* Ancho fijo para el panel lateral */
+            min-width: 250px;
+            max-width: 350px;
+            padding: 15px;
+            background-color: rgba(255, 255, 255, 0.95);
+            border-radius: 12px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+            z-index: 500;
+        }
+
+        /* Estilos para la lista de estado de las combis (dentro de sidebar-right) */
+        .combi-status-list {
+            display: flex;
+            flex-direction: column; /* Las tarjetas se apilan verticalmente */
+            gap: 10px;
+            flex-grow: 1; /* Permite que la lista de combis crezca y ocupe el espacio disponible */
+            max-height: calc(100vh - 250px); /* Altura máxima para la lista de combis, ajusta según el tamaño de tu header/footer */
+            overflow-y: auto; /* Barra de desplazamiento vertical SOLO para la lista de combis */
+            padding-right: 5px; /* Pequeño padding para la barra de desplazamiento */
+        }
+
+        /* Estilos para cada tarjeta de combi */
+        .combi-card {
+            background-color: #ffffff;
+            padding: 10px 12px;
+            border-radius: 10px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.08);
+            text-align: left;
+            font-size: 0.85em;
+            border-left: 5px solid;
+            transition: transform 0.2s ease;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        .combi-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .combi-card h3 {
+            margin: 0 0 6px;
+            font-size: 1em;
+            color: #28a745;
+        }
+
+        .combi-card p {
+            margin: 3px 0;
+            color: #555;
+        }
+
+        .combi-card strong {
+            font-weight: 600;
+            color: #343a40;
+        }
+
+        /* Estilos para el botón de incidente dentro de la tarjeta */
+        .incident-button {
+            background-color: #dc3545;
+            color: white;
+            padding: 6px 10px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.8em;
+            font-weight: 500;
+            transition: background-color 0.3s ease, transform 0.2s ease;
+            margin-top: 8px;
+            align-self: flex-end;
+        }
+
+        .incident-button.resolve {
+            background-color: #28a745;
+        }
+
+        .incident-button:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+        }
+
+        .incident-button:active {
+            transform: translateY(0);
+        }
+
+        /* NUEVO: Contenedor para los botones de control principal (fuera del sidebar) */
+        .main-controls-container {
+            display: flex;
+            justify-content: center; /* Centrar los botones horizontalmente */
+            gap: 15px; /* Espacio entre botones */
+            padding: 15px 20px; /* Padding alrededor */
+            margin-top: 20px; /* Espacio superior para separarlo del mapa */
+            background-color: rgba(255, 255, 255, 0.95);
+            border-radius: 12px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+            width: fit-content; /* Ajustar ancho al contenido */
+            margin-left: auto; /* Centrar con márgenes automáticos */
+            margin-right: auto; /* Centrar con márgenes automáticos */
+            z-index: 500;
+        }
+
+        /* Estilos para los botones de control principal */
+        .control-button {
+            background: linear-gradient(45deg, #007bff, #0056b3);
+            color: white;
+            padding: 12px 25px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1em;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            flex-grow: 1;
+            max-width: none; /* No limitar el ancho de botones individuales */
+        }
+
+        .control-button:hover {
+            background: linear-gradient(45deg, #0056b3, #003f7f);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.25);
+        }
+
+        .control-button:active {
+            transform: translateY(0);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+
+        /* Estilos para el cuadro de mensaje personalizado */
+        .message-box-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.6);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            visibility: hidden;
+            opacity: 0;
+            transition: visibility 0s, opacity 0.3s ease;
+        }
+
+        .message-box-overlay.show {
+            visibility: visible;
+            opacity: 1;
+        }
+
+        .message-box {
+            background-color: white;
+            padding: 35px;
+            border-radius: 15px;
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
+            text-align: center;
+            max-width: 450px;
+            width: 90%;
+            transform: scale(0.9);
+            transition: transform 0.3s ease;
+        }
+
+        .message-box-overlay.show .message-box {
+            transform: scale(1);
+        }
+
+        .message-box h3 {
+            margin-top: 0;
+            color: #28a745;
+            font-size: 1.5em;
+            margin-bottom: 15px;
+        }
+
+        .message-box p {
+            margin-bottom: 25px;
+            color: #6c757d;
+            line-height: 1.6;
+        }
+
+        .message-box button {
+            background-color: #28a745;
+            color: white;
+            padding: 12px 25px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1.1em;
+            font-weight: 500;
+            transition: background-color 0.3s ease;
+        }
+
+        .message-box button:hover {
+            background-color: #218838;
+        }
+
+        /* Estilos para los marcadores de parada */
+        .stop-marker-icon {
+            background-color: #f0ad4e;
+            border: 2px solid #fff;
+            border-radius: 50%;
+            width: 18px;
+            height: 18px;
+            text-align: center;
+            line-height: 18px;
+            font-size: 10px;
+            font-weight: bold;
+            color: white;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
+
+        /* Responsive design para pantallas pequeñas */
+        @media (max-width: 768px) {
+            .header {
+                padding: 12px 15px;
+                font-size: 0.8em;
+            }
+            .header h1 {
+                font-size: 1.5em;
+            }
+            .main-content {
+                flex-direction: column; /* Apila el mapa y el sidebar en móviles */
+                padding: 10px;
+                gap: 10px;
+            }
+            .sidebar-right { /* Ajustar para móviles */
+                position: static;
+                width: auto;
+                max-width: none;
+                padding: 10px;
+            }
+            #map {
+                min-height: 300px;
+            }
+            .combi-status-list {
+                max-height: 200px; /* Limita la altura de la lista en móviles */
+                overflow-y: auto; /* Mantiene el scroll para la lista en móviles si es necesario */
+            }
+            .combi-card {
+                font-size: 0.9em;
+            }
+            .main-controls-container { /* Ajustar para móviles */
+                flex-direction: column; /* Botones apilados en móviles */
+                padding: 10px;
+                gap: 10px;
+                width: auto;
+            }
+            .control-button {
+                padding: 10px 15px;
+                font-size: 0.9em;
+            }
+            .message-box {
+                padding: 25px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Sistema de Rastreo de Combis</h1>
+        <p>Recorridos Múltiples y Horarios Simulados</p>
+    </div>
+
+    <div class="main-content">
+        <div id="map"></div>
+
+        <div class="sidebar-right">
+            <div class="combi-status-list" id="combi-status-list">
+                </div>
+        </div>
+    </div>
+
+    <div class="main-controls-container">
+        <button class="control-button" id="start-simulation">Iniciar Simulación</button>
+        <button class="control-button" id="pause-simulation">Pausar Simulación</button>
+        <button class="control-button" id="reset-simulation">Reiniciar Simulación</button>
+    </div>
+
+    <div id="message-box-overlay" class="message-box-overlay">
+        <div class="message-box">
+            <h3 id="message-box-title"></h3>
+            <p id="message-box-content"></p>
+            <button id="message-box-close">Aceptar</button>
+        </div>
+    </div>
+
+    <script>
+        // Global variables for the map and combi elements
+        let map;
+        let simulationRunning = false;
+        const SIMULATION_STEP_INTERVAL_MS = 150;
+
+        const SIMULATED_START_HOUR = 6;
+        const SIMULATED_START_MINUTE = 0;
+        const COMBI_DEPARTURE_INTERVAL_MINUTES = 40;
+
+        function formatTime(date) {
+            const hours = date.getHours().toString().padStart(2, '0');
+            const minutes = date.getMinutes().toString().padStart(2, '0');
+            return `${hours}:${minutes}`;
+        }
+
+        // Modificación: Interpolación que intenta seguir un path más complejo
+        function interpolatePoints(coordsList, numPointsPerSegment = 20) {
+            let points = [];
+            for (let i = 0; i < coordsList.length - 1; i++) {
+                const start = coordsList[i];
+                const end = coordsList[i+1];
+                for (let j = 0; j < numPointsPerSegment; j++) {
+                    const lat = start[0] + (end[0] - start[0]) * (j / numPointsPerSegment);
+                    const lng = start[1] + (end[1] - start[1]) * (j / numPointsPerSegment);
+                    points.push([lat, lng]);
+                }
+            }
+            points.push(coordsList[coordsList.length - 1]); // Ensure the very last point is included
+            return points;
+        }
+
+
+        // Define Key Points for All Routes (Ajustados para seguir carreteras)
+        // Coordenadas tomadas con un poco más de detalle para simular el paso por carretera
+        // Estas coordenadas son aproximadas y basadas en la vista aérea de la región en la imagen.
+        const pointA = [17.85545869530976, -93.49016701267686]; // Punto de Inicio/Retorno (Limones)
+        const pointB_end = [17.84203639501893, -93.49370241362219]; // Fin del Recorrido 1 (Punto B - hacia el sur)
+        const pointC_end = [17.86432414736383, -93.49681927030518]; // Fin del Recorrido 2 (Punto C - hacia el noroeste)
+        const pointD_end = [17.8320441, -93.3918106]; // Terminal Huimanguillo (Punto D)
+        const iglesiaCatolicaCoords = [17.855556, -93.490000]; // Iglesia Católica (cerca de A)
+
+        // --- Rutas con más puntos intermedios para seguir las carreteras ---
+
+        // Recorrido 1: Limones (A) <-> Sur (B)
+        const route1_coords = [
+            pointA,
+            [17.8540, -93.4905], // Curva inicial
+            [17.8480, -93.4920], // Sigue el camino
+            pointB_end // Fin del recorrido
+        ];
+        const loop1_AB = interpolatePoints(route1_coords, 30); // Más puntos para suavizar
+        const loop1_BA = [...loop1_AB].reverse();
+        const loop1_fullCycle = loop1_AB.concat(loop1_BA.slice(1));
+
+        // Recorrido 2: Limones (A) <-> Noroeste (C)
+        const route2_coords = [
+            pointA,
+            [17.8560, -93.4910], // Saliendo de A
+            [17.8590, -93.4930],
+            [17.8620, -93.4950],
+            pointC_end // Fin del recorrido
+        ];
+        const loop2_AC = interpolatePoints(route2_coords, 30);
+        const loop2_CA = [...loop2_AC].reverse();
+        const loop2_fullCycle = loop2_AC.concat(loop2_CA.slice(1));
+
+        // Recorrido 3: Limones (A) <-> Huimanguillo (D) - Ruta principal
+        // Esta ruta necesita muchos más puntos para seguir la carretera principal
+        const route3_coords = [
+            pointA,
+            iglesiaCatolicaCoords, // Iglesia Católica (Ocuapan)
+            [17.8550, -93.4880], // Carretera principal
+            [17.8520, -93.4820],
+            [17.8480, -93.4750],
+            [17.8450, -93.4680],
+            [17.8430, -93.4600],
+            [17.8410, -93.4500],
+            [17.8390, -93.4400],
+            [17.8370, -93.4300],
+            [17.8360, -93.4200],
+            [17.8350, -93.4100],
+            [17.8340, -93.4000],
+            pointD_end // Terminal Huimanguillo
+        ];
+        const loop3_AD = interpolatePoints(route3_coords, 25); // Más puntos por segmento para esta ruta larga
+        const loop3_DA = [...loop3_AD].reverse();
+        const loop3_fullCycle = loop3_AD.concat(loop3_DA.slice(1));
+
+        // Master Combined Route: Concatenación de los ciclos completos
+        // Las combis seguirán esta secuencia: Recorrido 1 (ida/vuelta), luego Recorrido 2 (ida/vuelta), luego Recorrido 3 (ida/vuelta)
+        // Se usa .slice(1) en los ciclos subsiguientes para evitar duplicar el punto de inicio/retorno (A)
+        const masterCombinedRoute = [
+            ...loop1_fullCycle,
+            ...loop2_fullCycle.slice(1),
+            ...loop3_fullCycle.slice(1)
+        ];
+
+        function findClosestIndex(coords, route) {
+            let minDistance = Infinity;
+            let closestIndex = -1;
+            for (let i = 0; i < route.length; i++) {
+                const point = route[i];
+                const dist = Math.sqrt(Math.pow(coords[0] - point[0], 2) + Math.pow(coords[1] - point[1], 2));
+                if (dist < minDistance) {
+                    minDistance = dist;
+                    closestIndex = i;
+                }
+            }
+            return closestIndex;
+        }
+
+        const fixedStops = [
+            { name: "Punto de Inicio/Retorno (Limones)", coords: pointA },
+            { name: "Fin del Recorrido 1 (Punto B)", coords: pointB_end },
+            { name: "Fin del Recorrido 2 (Punto C)", coords: pointC_end },
+            { name: "Iglesia Católica", coords: iglesiaCatolicaCoords },
+            { name: "Terminal Huimanguillo (Punto D)", coords: pointD_end }
+        ];
+
+        const stops = fixedStops.map(stop => ({
+            ...stop,
+            indexOnMasterRoute: findClosestIndex(stop.coords, masterCombinedRoute)
+        }));
+
+        const combis = [
+            { id: 1, name: "Combi 1", color: "#FF0000", marker: null, currentStepOnMasterRoute: 0, simulationInterval: null, infoElement: null, status: "Detenida", nextStopInfo: { name: "N/A", eta: "N/A" }, isIncident: false, simulatedDepartureTime: null },
+            { id: 2, name: "Combi 2", color: "#00FF00", marker: null, currentStepOnMasterRoute: 0, simulationInterval: null, infoElement: null, status: "Detenida", nextStopInfo: { name: "N/A", eta: "N/A" }, isIncident: false, simulatedDepartureTime: null },
+            { id: 3, name: "Combi 3", color: "#0000FF", marker: null, currentStepOnMasterRoute: 0, simulationInterval: null, infoElement: null, status: "Detenida", nextStopInfo: { name: "N/A", eta: "N/A" }, isIncident: false, simulatedDepartureTime: null },
+            { id: 4, name: "#4 Combi", color: "#FFA500", marker: null, currentStepOnMasterRoute: 0, simulationInterval: null, infoElement: null, status: "Detenida", nextStopInfo: { name: "N/A", eta: "N/A" }, isIncident: false, simulatedDepartureTime: null }
+        ];
+
+        const createCombiIcon = (color) => L.divIcon({
+            className: 'combi-icon',
+            html: `<svg width="30" height="30" viewBox="0 0 24 24" fill="${color}" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-bus"><path d="M2 6h20"/><path d="M6 10v4c0 2.2-1.8 4-4 4H2"/><path d="M22 18h-2c-2.2 0-4-1.8-4-4v-4"/><path d="M7 18h10"/><path d="M10 6v4"/><path d="M14 6v4"/><path d="m18 6 .7 2.7c.6 2.3.1 4.7-1.5 6.4L12 18l-5.2-2.9c-1.6-1.7-2.1-4.1-1.5-6.4L6 6h12Z"/></svg>`,
+            iconSize: [30, 30],
+            iconAnchor: [15, 15]
+        });
+
+        const createIncidentIcon = () => L.divIcon({
+            className: 'incident-icon',
+            html: `<svg width="30" height="30" viewBox="0 0 24 24" fill="#6c757d" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-wrench"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-2.53 2.53a1 1 0 0 0-1.4 0l-1.6-1.6a1 1 0 0 0 0-1.4l2.53-2.53a6 6 0 0 1 7.94-7.94l-3.77 3.77Z"/><path d="M5.5 8.5 3 11l6 6 2.5-2.5"/></svg>`,
+            iconSize: [30, 30],
+            iconAnchor: [15, 15]
+        });
+
+        const createStopIcon = (number) => L.divIcon({
+            className: 'stop-marker-icon',
+            html: `<span>${number}</span>`,
+            iconSize: [18, 18],
+            iconAnchor: [9, 9]
+        });
+
+        function initMap() {
+            map = L.map('map').setView(pointA, 13);
+
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            }).addTo(map);
+
+            L.polyline(masterCombinedRoute, {color: '#6c757d', weight: 4, opacity: 0.7, dashArray: '5, 10'}).addTo(map);
+
+            stops.forEach((stop, index) => {
+                L.marker(stop.coords, {icon: createStopIcon(index + 1)})
+                 .addTo(map)
+                 .bindPopup(`<b>${stop.name}</b>`);
+            });
+
+            const combiStatusList = document.getElementById('combi-status-list');
+            const totalMasterSteps = masterCombinedRoute.length;
+
+            combis.forEach((combi, index) => {
+                combi.currentStepOnMasterRoute = Math.floor((totalMasterSteps / combis.length) * index);
+
+                const departureTime = new Date();
+                departureTime.setHours(SIMULATED_START_HOUR, SIMULATED_START_MINUTE, 0, 0);
+                departureTime.setMinutes(departureTime.getMinutes() + (index * COMBI_DEPARTURE_INTERVAL_MINUTES));
+                combi.simulatedDepartureTime = departureTime;
+
+                combi.marker = L.marker(masterCombinedRoute[combi.currentStepOnMasterRoute], {icon: createCombiIcon(combi.color)}).addTo(map);
+
+                const combiCard = document.createElement('div');
+                combiCard.className = 'combi-card';
+                combiCard.style.borderLeftColor = combi.color;
+                combiCard.innerHTML = `
+                    <h3>${combi.name}</h3>
+                    <p>Salida: <strong id="combi-${combi.id}-departure">${formatTime(combi.simulatedDepartureTime)}</strong></p>
+                    <p>Lat: <strong id="combi-${combi.id}-lat">Cargando...</strong></p>
+                    <p>Lng: <strong id="combi-${combi.id}-lng">Cargando...</strong></p>
+                    <p>Estado: <strong id="combi-${combi.id}-status">${combi.status}</strong></p>
+                    <p>Próxima Parada: <strong id="combi-${combi.id}-next-stop">${combi.nextStopInfo.name}</strong></p>
+                    <p>ETA: <strong id="combi-${combi.id}-eta">${combi.nextStopInfo.eta}</strong></p>
+                    <button id="incident-button-${combi.id}" class="incident-button">Simular Incidente</button>
+                `;
+                combiStatusList.appendChild(combiCard);
+                combi.infoElement = {
+                    departure: document.getElementById(`combi-${combi.id}-departure`),
+                    lat: document.getElementById(`combi-${combi.id}-lat`),
+                    lng: document.getElementById(`combi-${combi.id}-lng`),
+                    status: document.getElementById(`combi-${combi.id}-status`),
+                    nextStop: document.getElementById(`combi-${combi.id}-next-stop`),
+                    eta: document.getElementById(`combi-${combi.id}-eta`),
+                    incidentButton: document.getElementById(`incident-button-${combi.id}`)
+                };
+
+                combi.infoElement.incidentButton.addEventListener('click', () => simulateIncident(combi.id));
+
+                calculateNextStopAndETA(combi);
+                updateCombiInfo(combi);
+            });
+
+            map.fitBounds(L.polyline(masterCombinedRoute).getBounds());
+        }
+
+        function updateCombiInfo(combi) {
+            const coords = masterCombinedRoute[combi.currentStepOnMasterRoute];
+            combi.infoElement.departure.textContent = formatTime(combi.simulatedDepartureTime);
+            combi.infoElement.lat.textContent = coords[0].toFixed(6);
+            combi.infoElement.lng.textContent = coords[1].toFixed(6);
+            combi.infoElement.status.textContent = combi.status;
+            combi.infoElement.nextStop.textContent = combi.nextStopInfo.name;
+            combi.infoElement.eta.textContent = combi.nextStopInfo.eta;
+
+            if (combi.isIncident) {
+                combi.infoElement.incidentButton.textContent = "Resolver Incidente";
+                combi.infoElement.incidentButton.classList.add('resolve');
+            } else {
+                combi.infoElement.incidentButton.textContent = "Simular Incidente";
+                combi.infoElement.incidentButton.classList.remove('resolve');
+            }
+        }
+
+        function calculateNextStopAndETA(combi) {
+            if (combi.isIncident) {
+                combi.nextStopInfo = { name: "Incidente", eta: "Incidente" };
+                return;
+            }
+
+            const currentStepIndex = combi.currentStepOnMasterRoute;
+            let nextStop = null;
+            let minStepsToStop = Infinity;
+
+            for (const stop of stops) {
+                if (stop.indexOnMasterRoute > currentStepIndex) {
+                    const stepsToStop = stop.indexOnMasterRoute - currentStepIndex;
+                    if (stepsToStop < minStepsToStop) {
+                        minStepsToStop = stepsToStop;
+                        nextStop = stop;
+                    }
+                }
+            }
+
+            if (!nextStop && stops.length > 0) {
+                const stepsToEndOfCurrentCycle = masterCombinedRoute.length - 1 - currentStepIndex;
+                const firstStopInNextCycle = stops.find(s => true);
+
+                if (firstStopInNextCycle) {
+                    const stepsToFirstStopInNextCycle = firstStopInNextCycle.indexOnMasterRoute;
+                    minStepsToStop = stepsToEndOfCurrentCycle + 1 + stepsToFirstStopInNextCycle;
+                    nextStop = firstStopInNextCycle;
+                }
+            }
+
+            if (nextStop) {
+                const etaMinutes = (minStepsToStop * SIMULATION_STEP_INTERVAL_MS / 1000 / 60).toFixed(1);
+                combi.nextStopInfo = { name: nextStop.name, eta: `${etaMinutes} min` };
+            } else {
+                combi.nextStopInfo = { name: "N/A", eta: "N/A" };
+            }
+        }
+
+        function showMessageBox(title, message) {
+            document.getElementById('message-box-title').textContent = title;
+            document.getElementById('message-box-content').textContent = message;
+            document.getElementById('message-box-overlay').classList.add('show');
+        }
+
+        function hideMessageBox() {
+            document.getElementById('message-box-overlay').classList.remove('show');
+        }
+
+        function simulateIncident(combiId) {
+            const combi = combis.find(c => c.id === combiId);
+            if (!combi) return;
+
+            combi.isIncident = !combi.isIncident;
+
+            if (combi.isIncident) {
+                if (combi.simulationInterval) {
+                    clearInterval(combi.simulationInterval);
+                    combi.simulationInterval = null;
+                }
+                combi.status = "En Incidente";
+                combi.marker.setIcon(createIncidentIcon());
+                showMessageBox("Incidente Reportado", `${combi.name} ha reportado un incidente y está detenida.`);
+            } else {
+                combi.status = simulationRunning ? "En ruta" : "Detenida";
+                combi.marker.setIcon(createCombiIcon(combi.color));
+                if (simulationRunning) {
+                    startCombiMovement(combi);
+                }
+                showMessageBox("Incidente Resuelto", `${combi.name} ha resuelto el incidente y está lista para continuar.`);
+            }
+            calculateNextStopAndETA(combi);
+            updateCombiInfo(combi);
+        }
+
+        function startCombiMovement(combi) {
+            if (combi.simulationInterval) {
+                clearInterval(combi.simulationInterval);
+            }
+            combi.simulationInterval = setInterval(() => {
+                combi.currentStepOnMasterRoute = (combi.currentStepOnMasterRoute + 1) % masterCombinedRoute.length;
+
+                const newPosition = masterCombinedRoute[combi.currentStepOnMasterRoute];
+                combi.marker.setLatLng(newPosition);
+                calculateNextStopAndETA(combi);
+                updateCombiInfo(combi);
+            }, SIMULATION_STEP_INTERVAL_MS);
+        }
+
+        function startSimulation() {
+            if (simulationRunning) return;
+            simulationRunning = true;
+
+            combis.forEach(combi => {
+                if (!combi.isIncident) {
+                    combi.status = "En ruta";
+                    startCombiMovement(combi);
+                }
+                updateCombiInfo(combi);
+            });
+        }
+
+        function pauseSimulation() {
+            if (!simulationRunning) return;
+            simulationRunning = false;
+
+            combis.forEach(combi => {
+                if (combi.simulationInterval) {
+                    clearInterval(combi.simulationInterval);
+                    combi.simulationInterval = null;
+                }
+                if (!combi.isIncident) {
+                    combi.status = "Pausada";
+                }
+                updateCombiInfo(combi);
+            });
+            showMessageBox("Simulación Pausada", "La simulación de las combis ha sido pausada.");
+        }
+
+        function resetSimulation() {
+            if (simulationRunning) {
+                pauseSimulation();
+            }
+            simulationRunning = false;
+            hideMessageBox();
+
+            const totalMasterSteps = masterCombinedRoute.length;
+
+            combis.forEach((combi, index) => {
+                combi.currentStepOnMasterRoute = Math.floor((totalMasterSteps / combis.length) * index);
+
+                const departureTime = new Date();
+                departureTime.setHours(SIMULATED_START_HOUR, SIMULATED_START_MINUTE, 0, 0);
+                departureTime.setMinutes(departureTime.getMinutes() + (index * COMBI_DEPARTURE_INTERVAL_MINUTES));
+                combi.simulatedDepartureTime = departureTime;
+
+                combi.marker.setLatLng(masterCombinedRoute[combi.currentStepOnMasterRoute]);
+                combi.status = "Detenida";
+                combi.isIncident = false;
+                combi.marker.setIcon(createCombiIcon(combi.color));
+                combi.nextStopInfo = { name: "N/A", eta: "N/A" };
+                calculateNextStopAndETA(combi);
+                updateCombiInfo(combi);
+            });
+            map.fitBounds(L.polyline(masterCombinedRoute).getBounds());
+        }
+
+        document.getElementById('start-simulation').addEventListener('click', startSimulation);
+        document.getElementById('pause-simulation').addEventListener('click', pauseSimulation);
+        document.getElementById('reset-simulation').addEventListener('click', resetSimulation);
+        document.getElementById('message-box-close').addEventListener('click', hideMessageBox);
+
+        window.onload = initMap;
+    </script>
+</body>
+</html>
